@@ -1,23 +1,27 @@
-from fastapi import FastAPI, Depends, HTTPException # type: ignore
-from fastapi.middleware.cors import CORSMiddleware # type: ignore
-from sqlalchemy.orm import Session # type: ignore
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+import os
 
 from database import engine, get_db
 from models import Base, User, Device, Telemetry
-from schemas import ( # type: ignore
+from schemas import (
     UserCreate, UserLogin, UserResponse, Token,
     DeviceCreate, DeviceResponse, DeviceUpdate,
     TelemetryCreate, TelemetryResponse
 )
-from auth import get_password_hash, authenticate_user, create_access_token, get_current_user, get_current_admin # type: ignore
+from auth import get_password_hash, authenticate_user, create_access_token, get_current_user, get_current_admin
 from mqtt_bridge import start_mqtt_thread
 
+# Create database tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="IoT Device Management Platform", version="1.0.0")
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,11 +30,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Start MQTT bridge thread
 start_mqtt_thread()
 
+# ============================================
+# FRONTEND ROUTES
+# ============================================
+
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
+
+print(f"📁 Frontend directory: {FRONTEND_DIR}")
+print(f"   login.html exists: {os.path.exists(os.path.join(FRONTEND_DIR, 'login.html'))}")
+print(f"   index.html exists: {os.path.exists(os.path.join(FRONTEND_DIR, 'index.html'))}")
+
 @app.get("/")
-def root():
-    return {"message": "IoT Platform API is running", "status": "healthy"}
+async def root():
+    return FileResponse(os.path.join(FRONTEND_DIR, "login.html"))
+
+@app.get("/login")
+async def login_page():
+    return FileResponse(os.path.join(FRONTEND_DIR, "login.html"))
+
+@app.get("/dashboard")
+async def dashboard():
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+@app.get("/index.html")
+async def index_html():
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+# ============================================
+# HEALTH CHECK
+# ============================================
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+# ============================================
+# AUTHENTICATION ENDPOINTS
+# ============================================
 
 @app.post("/auth/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -56,12 +95,22 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+# ============================================
+# DEVICE MANAGEMENT ENDPOINTS
+# ============================================
+
 @app.post("/devices", response_model=DeviceResponse)
 def create_device(device: DeviceCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     existing = db.query(Device).filter(Device.device_id == device.device_id).first()
     if existing:
         raise HTTPException(status_code=400, detail="Device ID already exists")
-    db_device = Device(device_id=device.device_id, name=device.name, location=device.location, device_type=device.device_type, owner_id=current_user.id)
+    db_device = Device(
+        device_id=device.device_id, 
+        name=device.name, 
+        location=device.location, 
+        device_type=device.device_type, 
+        owner_id=current_user.id
+    )
     db.add(db_device)
     db.commit()
     db.refresh(db_device)
@@ -80,6 +129,10 @@ def delete_device(device_id: int, current_user: User = Depends(get_current_user)
     db.commit()
     return {"message": "Device deleted"}
 
+# ============================================
+# TELEMETRY ENDPOINTS
+# ============================================
+
 @app.get("/telemetry/{device_id}", response_model=List[TelemetryResponse])
 def get_telemetry(device_id: int, limit: int = 100, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id, Device.owner_id == current_user.id).first()
@@ -87,6 +140,21 @@ def get_telemetry(device_id: int, limit: int = 100, current_user: User = Depends
         raise HTTPException(status_code=404, detail="Device not found")
     return db.query(Telemetry).filter(Telemetry.device_id == device_id).order_by(Telemetry.timestamp.desc()).limit(limit).all()
 
+@app.get("/telemetry/{device_id}/latest")
+def get_latest_telemetry(device_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.id == device_id, Device.owner_id == current_user.id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    latest = db.query(Telemetry).filter(Telemetry.device_id == device_id).order_by(Telemetry.timestamp.desc()).first()
+    if not latest:
+        return {"message": "No telemetry data yet"}
+    return {
+        "temperature": latest.temperature,
+        "humidity": latest.humidity,
+        "battery": latest.battery,
+        "timestamp": latest.timestamp
+    }
+
 if __name__ == "__main__":
-    import uvicorn # type: ignore
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

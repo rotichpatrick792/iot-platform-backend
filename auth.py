@@ -12,7 +12,8 @@ SECRET_KEY = "your-super-secret-key-change-this-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use sha256_crypt instead of bcrypt (no version issues)
+pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 security = HTTPBearer()
 
 def verify_password(plain_password, hashed_password):
