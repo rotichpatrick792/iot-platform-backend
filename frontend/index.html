@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konza IoT Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        .navbar {
+            background: rgba(0,0,0,0.3);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+        }
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #00d2ff;
+        }
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-danger {
+            background: #ff4444;
+            color: white;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-top: 0.5rem;
+        }
+        .device-list {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 1.5rem;
+        }
+        .device-item {
+            background: rgba(255,255,255,0.05);
+            padding: 1rem;
+            margin: 0.5rem 0;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .status-online { color: #00ff00; }
+        .status-offline { color: #ff4444; }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #1e1e3e;
+            padding: 2rem;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 400px;
+        }
+        .modal-content input, .modal-content select {
+            width: 100%;
+            padding: 0.8rem;
+            margin: 0.5rem 0;
+            border-radius: 8px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="logo">🌍 Konza IoT Platform</div>
+        <div>
+            <button class="btn btn-primary" onclick="showAddDevice()">+ Add Device</button>
+            <button class="btn btn-danger" onclick="logout()">Logout</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div>🌡️ Temperature</div>
+                <div class="stat-value" id="temp">--°C</div>
+            </div>
+            <div class="stat-card">
+                <div>💧 Humidity</div>
+                <div class="stat-value" id="humidity">--%</div>
+            </div>
+            <div class="stat-card">
+                <div>📱 Devices</div>
+                <div class="stat-value" id="deviceCount">0</div>
+            </div>
+        </div>
+        
+        <div class="device-list">
+            <h2>My Devices</h2>
+            <div id="devices">Loading...</div>
+        </div>
+    </div>
+    
+    <div id="addDeviceModal" class="modal">
+        <div class="modal-content">
+            <h3>Add New Device</h3>
+            <input type="text" id="deviceId" placeholder="Device ID (e.g., ESP8266_001)">
+            <input type="text" id="deviceName" placeholder="Device Name">
+            <input type="text" id="deviceLocation" placeholder="Location">
+            <select id="deviceType">
+                <option value="ESP8266">ESP8266</option>
+                <option value="ESP32">ESP32</option>
+            </select>
+            <button class="btn btn-primary" onclick="addDevice()">Add</button>
+            <button class="btn" onclick="closeModal()" style="background:#666;">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let token = localStorage.getItem("authToken");
+        
+        console.log("Token exists:", !!token);
+        
+        if (!token) {
+            console.log("No token, redirecting to login");
+            window.location.href = "/login";
+        }
+        
+        async function loadDevices() {
+            try {
+                const response = await fetch(`${API_URL}/devices`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const devices = await response.json();
+                document.getElementById("deviceCount").innerHTML = devices.length;
+                
+                const container = document.getElementById("devices");
+                if (devices.length === 0) {
+                    container.innerHTML = '<p>No devices yet. Click "Add Device" to get started.</p>';
+                    return;
+                }
+                
+                container.innerHTML = devices.map(d => `
+                    <div class="device-item">
+                        <div>
+                            <strong>${d.name}</strong><br>
+                            ID: ${d.device_id}<br>
+                            Location: ${d.location || "Not set"}<br>
+                            Status: <span class="${d.status === 'online' ? 'status-online' : 'status-offline'}">${d.status}</span>
+                        </div>
+                        <button class="btn btn-danger" onclick="deleteDevice(${d.id})">Delete</button>
+                    </div>
+                `).join("");
+            } catch(error) {
+                console.error("Error:", error);
+                document.getElementById("devices").innerHTML = '<p>Error loading devices. Make sure server is running.</p>';
+            }
+        }
+        
+        async function loadLatestTelemetry() {
+            try {
+                const devicesResp = await fetch(`${API_URL}/devices`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const devices = await devicesResp.json();
+                
+                if (devices.length > 0) {
+                    const teleResp = await fetch(`${API_URL}/telemetry/${devices[0].id}/latest`, {
+                        headers: { "Authorization": `Bearer ${token}` }
+                    });
+                    const data = await teleResp.json();
+                    if (data.temperature) {
+                        document.getElementById("temp").innerHTML = `${data.temperature}°C`;
+                        document.getElementById("humidity").innerHTML = `${data.humidity}%`;
+                    }
+                }
+            } catch(e) {
+                console.log("No telemetry yet");
+            }
+        }
+        
+        async function addDevice() {
+            const deviceData = {
+                device_id: document.getElementById("deviceId").value,
+                name: document.getElementById("deviceName").value,
+                location: document.getElementById("deviceLocation").value,
+                device_type: document.getElementById("deviceType").value
+            };
+            
+            const response = await fetch(`${API_URL}/devices`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify(deviceData)
+            });
+            
+            if (response.ok) {
+                closeModal();
+                loadDevices();
+                alert("Device added!");
+            } else {
+                const error = await response.json();
+                alert("Error: " + error.detail);
+            }
+        }
+        
+        async function deleteDevice(deviceId) {
+            if (confirm("Delete this device?")) {
+                const response = await fetch(`${API_URL}/devices/${deviceId}`, {
+                    method: "DELETE",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    loadDevices();
+                }
+            }
+        }
+        
+        function showAddDevice() {
+            document.getElementById("addDeviceModal").style.display = "flex";
+        }
+        
+        function closeModal() {
+            document.getElementById("addDeviceModal").style.display = "none";
+            document.getElementById("deviceId").value = "";
+            document.getElementById("deviceName").value = "";
+            document.getElementById("deviceLocation").value = "";
+        }
+        
+        function logout() {
+            localStorage.removeItem("authToken");
+            window.location.href = "/login";
+        }
+        
+        loadDevices();
+        loadLatestTelemetry();
+        setInterval(loadDevices, 10000);
+        setInterval(loadLatestTelemetry, 10000);
+    </script>
+</body>
+</html>

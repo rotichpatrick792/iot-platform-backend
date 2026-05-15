@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Konza IoT Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 400px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #00d2ff;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 0.8rem;
+            border: none;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+        }
+        .form {
+            display: none;
+        }
+        .form.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: rgba(255,255,255,0.7);
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.8rem;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        .btn {
+            width: 100%;
+            padding: 0.8rem;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            color: white;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        .error {
+            color: #ff4444;
+            text-align: center;
+            margin-top: 1rem;
+        }
+        .success {
+            color: #00ff00;
+            text-align: center;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌍 Konza IoT Platform</h1>
+        
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="switchTab('login')">Login</button>
+            <button class="tab-btn" onclick="switchTab('register')">Register</button>
+        </div>
+
+        <div id="loginForm" class="form active">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="loginUsername" placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="loginPassword" placeholder="Enter password">
+            </div>
+            <button class="btn" onclick="login()">Login</button>
+            <div id="loginError" class="error"></div>
+        </div>
+
+        <div id="registerForm" class="form">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="regUsername" placeholder="Choose username">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="regEmail" placeholder="Enter email">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="regPassword" placeholder="Choose password">
+            </div>
+            <button class="btn" onclick="register()">Register</button>
+            <div id="regSuccess" class="success"></div>
+            <div id="regError" class="error"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        
+        function switchTab(tab) {
+            const loginForm = document.getElementById("loginForm");
+            const registerForm = document.getElementById("registerForm");
+            const buttons = document.querySelectorAll(".tab-btn");
+            
+            if (tab === "login") {
+                loginForm.classList.add("active");
+                registerForm.classList.remove("active");
+                buttons[0].classList.add("active");
+                buttons[1].classList.remove("active");
+            } else {
+                loginForm.classList.remove("active");
+                registerForm.classList.add("active");
+                buttons[0].classList.remove("active");
+                buttons[1].classList.add("active");
+            }
+        }
+        
+        async function login() {
+            const username = document.getElementById("loginUsername").value;
+            const password = document.getElementById("loginPassword").value;
+            const errorDiv = document.getElementById("loginError");
+            
+            errorDiv.innerHTML = "";
+            
+            if (!username || !password) {
+                errorDiv.innerHTML = "Please enter username and password";
+                return;
+            }
+            
+            try {
+                console.log("Logging in with:", username);
+                
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                console.log("Response status:", response.status);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Login success, token:", data.access_token.substring(0, 20) + "...");
+                    localStorage.setItem("authToken", data.access_token);
+                    console.log("Redirecting to dashboard...");
+                    window.location.href = "/dashboard";
+                } else {
+                    const error = await response.json();
+                    errorDiv.innerHTML = error.detail || "Login failed";
+                }
+            } catch (error) {
+                console.error("Login error:", error);
+                errorDiv.innerHTML = "Error connecting to server";
+            }
+        }
+        
+        async function register() {
+            const username = document.getElementById("regUsername").value;
+            const email = document.getElementById("regEmail").value;
+            const password = document.getElementById("regPassword").value;
+            const successDiv = document.getElementById("regSuccess");
+            const errorDiv = document.getElementById("regError");
+            
+            successDiv.innerHTML = "";
+            errorDiv.innerHTML = "";
+            
+            if (!username || !email || !password) {
+                errorDiv.innerHTML = "Please fill all fields";
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ username, email, password })
+                });
+                
+                if (response.ok) {
+                    successDiv.innerHTML = "Registration successful! Please login.";
+                    document.getElementById("regUsername").value = "";
+                    document.getElementById("regEmail").value = "";
+                    document.getElementById("regPassword").value = "";
+                    setTimeout(() => switchTab("login"), 2000);
+                } else {
+                    const error = await response.json();
+                    errorDiv.innerHTML = error.detail || "Registration failed";
+                }
+            } catch (error) {
+                console.error("Registration error:", error);
+                errorDiv.innerHTML = "Error connecting to server";
+            }
+        }
+    </script>
+</body>
+</html>
